@@ -8,6 +8,7 @@ const _ = require('lodash');
 const charset = require('charset');
 const iconv = require('iconv-lite');
 const path = require('path');
+const mime = require('mime-types');
 
 // Some sites block non-standard user agents so we need to mimic a typical browser
 // Note: the Ghost/5.0 string _may_ be in use by 3rd parties so use caution when updating across majors
@@ -133,13 +134,13 @@ class OEmbedService {
     }
 
     /**
-     * Fetches the image buffer from a URL using this.externalRequest
+     * Fetches the image buffer and content-type from a URL using this.externalRequest
      * @param {string} imageUrl - URL of the image to fetch
-     * @returns {Promise<Buffer>} - Promise resolving to the image buffer
+     * @returns {Promise<{buffer: Buffer, contentType: string|undefined}>}
      */
     async fetchImageBuffer(imageUrl) {
-        const buffer = await this.externalRequest(imageUrl).buffer();
-        return buffer;
+        const response = await this.externalRequest(imageUrl, {responseType: 'buffer'});
+        return {buffer: response.body, contentType: response.headers['content-type']};
     }
 
     /**
@@ -150,14 +151,24 @@ class OEmbedService {
      */
     async processImageFromUrl(imageUrl, imageType) {
         // Fetch image buffer from the URL
-        const imageBuffer = await this.fetchImageBuffer(imageUrl);
+        const {buffer: imageBuffer, contentType} = await this.fetchImageBuffer(imageUrl);
         const store = this.storage.getStorage('images');
 
         // Extract file name from URL
         const fileName = path.basename(new URL(imageUrl).pathname);
         let ext = path.extname(fileName);
-        let name;
 
+        // If the URL has no extension, derive one from the Content-Type response header.
+        // This handles dynamically-generated image URLs (e.g. /og-image, /thumbnail/my-post)
+        // that serve an image without embedding the format in the path.
+        if (!ext && contentType) {
+            const detectedExt = mime.extension(contentType);
+            if (detectedExt) {
+                ext = `.${detectedExt}`;
+            }
+        }
+
+        let name;
         if (ext) {
             name = store.getSanitizedFileName(path.basename(fileName, ext));
         } else {

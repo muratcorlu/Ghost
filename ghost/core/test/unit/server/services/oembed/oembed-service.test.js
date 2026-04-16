@@ -248,10 +248,8 @@ describe('oembed-service', function () {
                         };
                     }
                 },
-                externalRequest() {
-                    return {
-                        buffer: async () => Buffer.from('img-bytes')
-                    };
+                async externalRequest() {
+                    return {body: Buffer.from('img-bytes'), headers: {'content-type': 'image/png'}};
                 }
             });
 
@@ -284,10 +282,8 @@ describe('oembed-service', function () {
                         };
                     }
                 },
-                externalRequest() {
-                    return {
-                        buffer: async () => Buffer.from('ico-bytes')
-                    };
+                async externalRequest() {
+                    return {body: Buffer.from('ico-bytes'), headers: {'content-type': 'image/x-icon'}};
                 }
             });
 
@@ -295,6 +291,71 @@ describe('oembed-service', function () {
 
             assert.equal(storedUrl, '/content/images/icon/favicon.ico');
             assert.equal(saveRaw.firstCall.args[1], 'icon/favicon.ico');
+        });
+
+        it('derives file extension from Content-Type header when URL has no extension', async function () {
+            const saveRaw = sinon.stub().resolves('/content/images/thumbnail/image-file-name.jpeg');
+            const generateUnique = sinon.stub().resolves('/tmp/content/images/thumbnail/image-file-name.jpeg');
+            const getSanitizedFileName = sinon.stub().returns('image-file-name');
+
+            const service = new OembedService({
+                config: {
+                    getContentPath() {
+                        return '/tmp/content/images';
+                    }
+                },
+                storage: {
+                    getStorage() {
+                        return {
+                            getSanitizedFileName,
+                            generateUnique,
+                            saveRaw
+                        };
+                    }
+                },
+                async externalRequest() {
+                    return {body: Buffer.from('img-bytes'), headers: {'content-type': 'image/jpeg'}};
+                }
+            });
+
+            const storedUrl = await service.processImageFromUrl('https://example.com/thumbnail/image-file-name', 'thumbnail');
+
+            assert.equal(storedUrl, '/content/images/thumbnail/image-file-name.jpeg');
+            assert.equal(saveRaw.firstCall.args[1], 'thumbnail/image-file-name.jpeg');
+            // generateUnique must be called with the derived extension
+            assert.equal(generateUnique.firstCall.args[2], '.jpeg');
+        });
+
+        it('stores extension-less file when Content-Type header is absent', async function () {
+            const saveRaw = sinon.stub().resolves('/content/images/thumbnail/unknown-image');
+            const generateUnique = sinon.stub().resolves('/tmp/content/images/thumbnail/unknown-image');
+            const getSanitizedFileName = sinon.stub().returns('unknown-image');
+
+            const service = new OembedService({
+                config: {
+                    getContentPath() {
+                        return '/tmp/content/images';
+                    }
+                },
+                storage: {
+                    getStorage() {
+                        return {
+                            getSanitizedFileName,
+                            generateUnique,
+                            saveRaw
+                        };
+                    }
+                },
+                async externalRequest() {
+                    return {body: Buffer.from('img-bytes'), headers: {}};
+                }
+            });
+
+            const storedUrl = await service.processImageFromUrl('https://example.com/thumbnail/unknown-image', 'thumbnail');
+
+            assert.equal(storedUrl, '/content/images/thumbnail/unknown-image');
+            assert.equal(saveRaw.firstCall.args[1], 'thumbnail/unknown-image');
+            assert.equal(generateUnique.firstCall.args[2], '');
         });
 
         it('throws when storage lacks saveRaw', async function () {
@@ -312,10 +373,8 @@ describe('oembed-service', function () {
                         };
                     }
                 },
-                externalRequest() {
-                    return {
-                        buffer: async () => Buffer.from('img-bytes')
-                    };
+                async externalRequest() {
+                    return {body: Buffer.from('img-bytes'), headers: {}};
                 }
             });
 
